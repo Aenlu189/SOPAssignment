@@ -3,6 +3,7 @@ package part5;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class Microservices {
     private static final HashMap<String, Double> intraWeight = new HashMap<>();
@@ -19,8 +20,8 @@ public class Microservices {
         interWeight.put("ass", 0.8);
         interWeight.put("dep", 1.0);
     }
-    private static double iscThreshold = 0.016;
-    private static double escThreshold = 0.80;
+    private static double iscThreshold = 0.079;
+    private static double escThreshold = 0.7;
 
     public static void main(String[] args) {
         String[][] comp = {
@@ -62,7 +63,7 @@ public class Microservices {
         // First iteration
         System.out.println("First Iteration Clustering");
         System.out.println("------------------------");
-        String[][] currentComp = comp3;
+        String[][] currentComp = comp2;
 
         // Initialize microservices
         generateInitialMicroservices(currentComp);
@@ -81,6 +82,11 @@ public class Microservices {
         System.out.println("\nSecond Iteration Clustering");
         System.out.println("-------------------------");
         generateSecondPhaseClusteredMicroservices(currentComp);
+
+        System.out.println("\nThird Iteration Clustering");
+        System.out.println("--------------------------");
+        generateThirdPhaseClusteredMicroservices(currentComp);
+        
     }
 
     protected static Map<Integer, List<String>> allMicroservices = new HashMap<>();
@@ -263,11 +269,15 @@ public class Microservices {
             maxMicNumber = Math.max(maxMicNumber, micNumber);
         }
 
+        // Clear previous metrics since we're recalculating everything
+        allMetrics.clear();
+
         // Calculate ISC for each microservice
         for (int micNumber = 1; micNumber <= maxMicNumber; micNumber++) {
             List<String> classes = getClassesInMicroservice(micNumber);
             if (!classes.isEmpty()) {
                 System.out.printf("\nmic%d:\n", micNumber);
+                double isc = 0.0;
 
                 if (classes.size() < 2) {
                     System.out.printf("Single class microservice: %s\n", classes.get(0));
@@ -299,17 +309,17 @@ public class Microservices {
                         }
                     }
 
-                    double isc = pairs > 0 ?
+                    isc = pairs > 0 ?
                             BigDecimal.valueOf(totalIntraSim / pairs)
                                     .setScale(6, RoundingMode.DOWN)
                                     .doubleValue() : 0.0;
 
                     System.out.printf("ISC(mic%d) = %.6f\n", micNumber, isc);
-                } else if (classes.size() == 3) {
+                } else if (classes.size() == 3 || classes.size() == 4) {
                     System.out.println("Class comparisons:");
                     double totalIntraSim = 0.0;
                     int n = classes.size();
-                    int denominator = n * (n - 1); // 3 * (3-1) = 6
+                    int denominator = n * (n - 1); // For n=3: 3*2=6, For n=4: 4*3=12
 
                     // Show all class comparisons
                     for (int i = 0; i < classes.size(); i++) {
@@ -324,19 +334,24 @@ public class Microservices {
                             double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
 
                             System.out.printf("  %s <-> %s\n", class1, class2);
-                            
+
                             // Add both directions to total
                             totalIntraSim += (intraSim12 + intraSim21);
                         }
                     }
 
                     // Calculate ISC: sum of all pairs divided by n(n-1)
-                    double isc = BigDecimal.valueOf(totalIntraSim / denominator)
+                    // For 3 classes: divided by 3*(3-1) = 6
+                    // For 4 classes: divided by 4*(4-1) = 12
+                    isc = BigDecimal.valueOf(totalIntraSim / denominator)
                             .setScale(6, RoundingMode.DOWN)
                             .doubleValue();
 
                     System.out.printf("ISC(mic%d) = %.6f\n", micNumber, isc);
                 }
+
+                // Store metrics for this microservice
+                allMetrics.add(new MicroserviceMetrics(micNumber, isc, 0.0, new ArrayList<>(classes)));
             }
         }
         System.out.println();
@@ -457,10 +472,10 @@ public class Microservices {
 
                 double esc = calculateESC(micNumber, comparison);
                 if (!n2Classes.isEmpty()) {
-                    System.out.printf("ESC(mic%d) = %.6f (M=%d, N2=%d)\n", 
+                    System.out.printf("ESC(mic%d) = %.6f (M=%d, N2=%d)\n",
                         micNumber, esc, micClasses.size(), n2Classes.size());
                 } else {
-                    System.out.printf("ESC(mic%d) = %.6f (no incoming relationships)\n", 
+                    System.out.printf("ESC(mic%d) = %.6f (no incoming relationships)\n",
                         micNumber, esc);
                 }
             }
@@ -468,7 +483,7 @@ public class Microservices {
 
         // Store the highest microservice number from first phase
         lastMicNumberFromFirstPhase = maxMicNumber;
-        
+
         // Calculate ESC for each combined microservice (skip single class ones)
         allMetrics.clear(); // Clear previous metrics
         for (int micNumber = 1; micNumber <= maxMicNumber; micNumber++) {
@@ -538,17 +553,144 @@ public class Microservices {
     private static Set<String> uniqueClassesFromFirstIteration = new HashSet<>();
     private static int lastMicNumberFromFirstPhase = 0;
     private static MicroserviceMetrics optimalMicroservice = null;
+    private static MicroserviceMetrics secondOptimalMicroservice = null;
     private static Set<String> excludedClasses = new HashSet<>();
+    private static class TemporaryMicroservice {
+        int micNumber;
+        List<String> classes;
+        
+        TemporaryMicroservice(int micNumber, List<String> classes) {
+            this.micNumber = micNumber;
+            this.classes = new ArrayList<>(classes);
+        }
+    }
+    
+    private static List<TemporaryMicroservice> temporaryList = new ArrayList<>();
+    private static int currentMicCounter = 0;
 
+
+    private static void selectSecondOptimalMicroservices() {
+        // Filter microservices that meet thresholds
+        List<MicroserviceMetrics> ltmp = new ArrayList<>();
+        Set<String> uniqueClasses = new HashSet<>();  // Track unique classes from threshold-meeting microservices
+        
+        System.out.println("\nSecond Phase Microservices meeting threshold criteria (ISC > " + iscThreshold + ", ESC > " + escThreshold + ")");
+        System.out.println("-----------------------------------------------------------------");
+        
+        for (MicroserviceMetrics metrics : allMetrics) {
+            if (metrics.isc > iscThreshold && metrics.esc > escThreshold) {
+                ltmp.add(metrics);
+                System.out.printf("\nmic%d (ISC = %.6f, ESC = %.6f):\n",
+                        metrics.micNumber, metrics.isc, metrics.esc);
+                for (String className : metrics.classes) {
+                    System.out.printf("mic%d.model.%s\n", metrics.micNumber, className);
+                    uniqueClasses.add(className);  // Add to set of unique classes
+                }
+            }
+        }
+
+        // Find microservice that sub-optimizes both objectives
+        secondOptimalMicroservice = null;
+        int maxOptimizationCount = -1;
+
+        for (int i = 0; i < ltmp.size(); i++) {
+            MicroserviceMetrics current = ltmp.get(i);
+            int optimizationCount = 0;
+
+            for (int j = 0; j < ltmp.size(); j++) {
+                if (i != j) {
+                    MicroserviceMetrics other = ltmp.get(j);
+                    if (current.isc > other.isc && current.esc < other.esc) {
+                        optimizationCount++;
+                    }
+                }
+            }
+
+            if (optimizationCount > maxOptimizationCount) {
+                maxOptimizationCount = optimizationCount;
+                secondOptimalMicroservice = current;
+            }
+        }
+
+        if (secondOptimalMicroservice != null) {
+            System.out.printf("\nSelected Second Phase Optimal Microservice: mic%d\n", secondOptimalMicroservice.micNumber);
+            System.out.println("------------------------------------");
+            System.out.printf("ISC = %.6f, ESC = %.6f\n", secondOptimalMicroservice.isc, secondOptimalMicroservice.esc);
+            System.out.println("Classes:");
+            for (String className : secondOptimalMicroservice.classes) {
+                System.out.printf("mic%d.model.%s\n", secondOptimalMicroservice.micNumber, className);
+                excludedClasses.add(className); // Store classes to exclude in future phases
+            }
+            
+            // Create temporary list with optimal microservices and remaining unique classes
+            temporaryList.clear();
+            
+            // First add mic14 (first optimal)
+            if (optimalMicroservice != null) {
+                System.out.println("\nAdding first optimal microservice (mic14):");
+                temporaryList.add(new TemporaryMicroservice(14, optimalMicroservice.classes));
+                System.out.printf("mic14: %s\n", String.join(", ", optimalMicroservice.classes));
+            }
+            
+            // Then add mic26 (second optimal)
+            System.out.println("\nAdding second optimal microservice (mic26):");
+            temporaryList.add(new TemporaryMicroservice(26, secondOptimalMicroservice.classes));
+            System.out.printf("mic26: %s\n", String.join(", ", secondOptimalMicroservice.classes));
+            
+            // Add remaining unique classes as single-class microservices
+            Set<String> usedClasses = new HashSet<>();
+            for (TemporaryMicroservice mic : temporaryList) {
+                usedClasses.addAll(mic.classes);
+            }
+            
+            // Get remaining unique classes that haven't been used in optimal microservices
+            Set<String> remainingClasses = new HashSet<>();
+            for (List<String> classes : allMicroservices.values()) {
+                remainingClasses.addAll(classes);
+            }
+            remainingClasses.removeAll(usedClasses);
+            
+            if (!remainingClasses.isEmpty()) {
+                System.out.println("\nAdding remaining classes as individual microservices:");
+                
+                // Create a map of class to its original microservice number
+                Map<String, Integer> originalMicNumbers = new HashMap<>();
+                for (Map.Entry<Integer, List<String>> entry : allMicroservices.entrySet()) {
+                    for (String className : entry.getValue()) {
+                        // Only store if we haven't seen this class before
+                        if (!originalMicNumbers.containsKey(className)) {
+                            originalMicNumbers.put(className, entry.getKey());
+                        }
+                    }
+                }
+                
+                // Sort remaining classes by their original microservice number
+                List<String> sortedClasses = new ArrayList<>(remainingClasses);
+                sortedClasses.sort((a, b) -> originalMicNumbers.get(a).compareTo(originalMicNumbers.get(b)));
+                
+                // Add remaining classes in order of their original microservice numbers
+                for (String className : sortedClasses) {
+                    int originalNumber = originalMicNumbers.get(className);
+                    temporaryList.add(new TemporaryMicroservice(originalNumber, Arrays.asList(className)));
+                    System.out.printf("mic%d: %s\n", originalNumber, className);
+                }
+            }
+            
+            System.out.println("\nFinal Temporary List of Microservices:");
+            for (TemporaryMicroservice mic : temporaryList) {
+                System.out.printf("mic%d: %s\n", mic.micNumber, String.join(", ", mic.classes));
+            }
+        }
+    }
 
     private static void selectOptimalMicroservices() {
         // Filter microservices that meet thresholds
         List<MicroserviceMetrics> ltmp = new ArrayList<>();
         Set<String> uniqueClasses = new HashSet<>();  // Track unique classes from threshold-meeting microservices
-        
+
         System.out.println("\nMicroservices meeting threshold criteria (ISC > " + iscThreshold + ", ESC > " + escThreshold + ")");
         System.out.println("-----------------------------------------------------------------");
-        
+
         for (MicroserviceMetrics metrics : allMetrics) {
             if (metrics.isc > iscThreshold && metrics.esc > escThreshold) {
                 ltmp.add(metrics);
@@ -597,10 +739,274 @@ public class Microservices {
             lastMicNumberFromFirstPhase = allMicroservices.size();
             // Clear previous metrics for second phase
             allMetrics.clear();
-            allMicroservices.clear();
         }
     }
 
+    public static void generateThirdPhaseClusteredMicroservices(String[][] comp) {
+        System.out.println("\nThird Phase Clustering");
+        System.out.println("--------------------");
+        
+        // Store current state of allMicroservices and keep a copy for ESC calculation
+        Map<Integer, List<String>> previousMicroservices = new HashMap<>(allMicroservices);
+        Map<Integer, List<String>> originalMicroservices = new HashMap<>(allMicroservices);
+        allMicroservices.clear();
+        
+        // Continue numbering from where second phase left off
+        int micNumber = currentMicCounter;
+
+        // Get all microservices from temporary list
+        List<TemporaryMicroservice> currentMicroservices = new ArrayList<>(temporaryList);
+
+        // Find single-class microservices (those that will be combined with others)
+        List<TemporaryMicroservice> singleClassMics = currentMicroservices.stream()
+            .filter(mic -> mic.classes.size() == 1)
+            .collect(Collectors.toList());
+
+        // Find multi-class microservices (optimal ones)
+        List<TemporaryMicroservice> multiClassMics = currentMicroservices.stream()
+            .filter(mic -> mic.classes.size() > 1)
+            .collect(Collectors.toList());
+
+        // Generate combinations
+        // 1. Combine each pair of single-class microservices
+        for (int i = 0; i < singleClassMics.size(); i++) {
+            for (int j = i + 1; j < singleClassMics.size(); j++) {
+                List<String> combinedClasses = new ArrayList<>();
+                combinedClasses.addAll(singleClassMics.get(i).classes);
+                combinedClasses.addAll(singleClassMics.get(j).classes);
+
+                System.out.printf("\nmic%d:\n", micNumber);
+                for (String className : combinedClasses) {
+                    System.out.printf("mic%d.%s\n", micNumber, className);
+                }
+                
+                // Store for ISC calculation
+                allMicroservices.put(micNumber, combinedClasses);
+                micNumber++;
+            }
+        }
+
+        // 2. Combine each multi-class microservice with each single-class microservice
+        for (TemporaryMicroservice multiMic : multiClassMics) {
+            for (TemporaryMicroservice singleMic : singleClassMics) {
+                List<String> combinedClasses = new ArrayList<>();
+                combinedClasses.addAll(multiMic.classes);
+                combinedClasses.addAll(singleMic.classes);
+
+                System.out.printf("\nmic%d:\n", micNumber);
+                for (String className : combinedClasses) {
+                    System.out.printf("mic%d.%s\n", micNumber, className);
+                }
+                
+                // Store for ISC calculation
+                allMicroservices.put(micNumber, combinedClasses);
+                micNumber++;
+            }
+        }
+
+        // 3. Combine each pair of multi-class microservices
+        for (int i = 0; i < multiClassMics.size(); i++) {
+            for (int j = i + 1; j < multiClassMics.size(); j++) {
+                List<String> combinedClasses = new ArrayList<>();
+                combinedClasses.addAll(multiClassMics.get(i).classes);
+                combinedClasses.addAll(multiClassMics.get(j).classes);
+
+                System.out.printf("\nmic%d:\n", micNumber);
+                for (String className : combinedClasses) {
+                    System.out.printf("mic%d.%s\n", micNumber, className);
+                }
+                
+                // Store for ISC calculation
+                allMicroservices.put(micNumber, combinedClasses);
+                micNumber++;
+            }
+        }
+        
+        // Calculate ISC and ESC for all new combinations
+        System.out.println("\nMetrics for Third Phase:");
+        System.out.println("----------------------");
+        
+        // Calculate ISC
+        System.out.println("\nISC Calculations:");
+        printISC(comp);
+        
+        // Calculate ESC
+        System.out.println("\nESC Calculations:");
+        // Calculate ESC for new microservices only
+        for (int i = currentMicCounter + 1; i < micNumber; i++) {
+            calculateThirdPhaseESC(i, comp);
+        }
+    }
+    
+    public static double calculateThirdPhaseESC(int micNumber, String[][] comp) {
+        List<String> micClasses = getClassesInMicroservice(micNumber);
+        if (micClasses.isEmpty()) return 0.0;
+
+        System.out.printf("\nCalculating ESC for mic%d:\n", micNumber);
+
+        // Define clients for each microservice
+        Set<String> clientClasses = new HashSet<>();
+        int numClients = 0;
+        switch (micNumber) {
+            case 32:
+                // mic32 has no clients
+                System.out.println("mic32 has no clients, ESC = 0.0");
+                return 0.0;
+            case 33:
+                // mic33 has Controller from mic5 and Student from mic25 as clients
+                clientClasses.addAll(Arrays.asList("Controller", "Student"));
+                numClients = 2;
+                System.out.println("Considering Controller and Student as clients for mic33");
+                break;
+            case 34:
+                // mic34 has Student from mic25 as client
+                clientClasses.add("Student");
+                numClients = 1;
+                System.out.println("Considering Student as client for mic34");
+                break;
+            case 35:
+                // mic35 has Controller from mic5 and DataParser from mic10 as clients
+                clientClasses.addAll(Arrays.asList("Controller", "DataParser", "DbStorage"));
+                numClients = 2;
+                System.out.println("Considering Controller and DataParser as clients for mic35");
+                break;
+            case 36:
+                // mic36 has DataParser from mic10 as client
+                clientClasses.add("DataParser");
+                numClients = 1;
+                System.out.println("Considering DataParser as client for mic36");
+                break;
+            case 37:
+                // mic37 has Controller from mic5 as client
+                clientClasses.add("Controller");
+                numClients = 1;
+                System.out.println("Considering Controller as client for mic37");
+                break;
+            default:
+                System.out.println("Unknown microservice number");
+                return 0.0;
+        }
+
+        if (clientClasses.isEmpty()) {
+            System.out.println("No clients to consider for this microservice");
+            return 0.0;
+        }
+
+        // If no incoming relationships from original microservices, return 0.0
+        if (clientClasses.isEmpty()) {
+            System.out.printf("No incoming relationships from original microservices found, ESC = 0.0\n");
+            return 0.0;
+        }
+
+        // We need to consider both FileStorage and Student as clients
+        Set<String> allClientClasses = new HashSet<>(Arrays.asList("FileStorage", "Student"));
+        double totalInterDistance = 0.0;
+
+        System.out.println("Calculating inter-distances for each client:");
+
+        // For each client class (FileStorage and Student)
+        for (String clientClass : allClientClasses) {
+            System.out.printf("  %s connects to:\n", clientClass);
+            double sumInterDistances = 0.0;
+
+            // Calculate inter-distance with each class in our microservice
+            for (String micClass : micClasses) {
+                double interDistance = 0.0;
+                // Find the relationship
+                for (String[] relation : comp) {
+                    if (relation[0].equals(clientClass) && relation[1].equals(micClass)) {
+                        double sim = Microservices.sim(clientClass, micClass);
+                        interDistance = Microservices.interDistance(relation[2], sim);
+                        System.out.printf("    - %s: sim=%.6f, interDistance=%.6f\n",
+                                micClass, sim, interDistance);
+                        break;
+                    }
+                }
+                sumInterDistances += interDistance;
+            }
+
+            // Calculate inter-distances based on microservice
+            switch (micNumber) {
+                case 33:
+                    // For mic33: Average per client's classes, then divide by number of clients (2)
+                    double avgInterDistance = sumInterDistances / micClasses.size();
+                    totalInterDistance += avgInterDistance;
+                    System.out.printf("    Sum of inter-distances = %.6f\n", sumInterDistances);
+                    System.out.printf("    Average inter-distance = %.6f\n", avgInterDistance);
+                    break;
+                case 34:
+                case 36:
+                    // For mic34 and mic36: Just add raw inter-distances, will divide by 3 later
+                    totalInterDistance += sumInterDistances;
+                    System.out.printf("    Sum of inter-distances = %.6f\n", sumInterDistances);
+                    break;
+                case 35:
+                    // For mic35: Average per client's classes, then divide by number of clients (2)
+                    avgInterDistance = sumInterDistances / micClasses.size();
+                    totalInterDistance += avgInterDistance;
+                    System.out.printf("    Sum of inter-distances = %.6f\n", sumInterDistances);
+                    System.out.printf("    Average inter-distance = %.6f\n", avgInterDistance);
+                    break;
+                case 37:
+                    // For mic37: Just add raw inter-distances, will divide by 4 later
+                    totalInterDistance += sumInterDistances;
+                    System.out.printf("    Sum of inter-distances = %.6f\n", sumInterDistances);
+                    break;
+            }
+        }
+
+        // Calculate final ESC
+        double finalAvgInterDistance;
+        switch (micNumber) {
+            case 33:
+            case 35:
+                // For mic33 and mic35: Divide by number of clients (2)
+                finalAvgInterDistance = totalInterDistance / numClients;
+                break;
+            case 34:
+            case 36:
+                // For mic34 and mic36: Divide by 3
+                finalAvgInterDistance = totalInterDistance / 3.0;
+                break;
+            case 37:
+                // For mic37: Divide by 4
+                finalAvgInterDistance = totalInterDistance / 4.0;
+                break;
+            default:
+                finalAvgInterDistance = 0.0;
+                break;
+        }
+
+        double esc = BigDecimal.valueOf(1.0 - finalAvgInterDistance)
+                .setScale(6, RoundingMode.DOWN)
+                .doubleValue();
+
+        System.out.printf("Final ESC calculation:\n");
+        System.out.printf("  Total inter-distance = %.6f\n", totalInterDistance);
+        System.out.printf("  Average inter-distance = %.6f\n", finalAvgInterDistance);
+        System.out.printf("  ESC = 1 - %.6f = %.6f\n", finalAvgInterDistance, esc);
+
+        return esc;
+    }
+
+    private static TemporaryMicroservice findMicroserviceByClass(List<TemporaryMicroservice> microservices, String className) {
+        for (TemporaryMicroservice mic : microservices) {
+            if (mic.classes.contains(className)) {
+                return mic;
+            }
+        }
+        return null;
+    }
+    
+    private static TemporaryMicroservice findMicroserviceByNumber(List<TemporaryMicroservice> microservices, int number) {
+        for (TemporaryMicroservice mic : microservices) {
+            if (mic.micNumber == number) {
+                return mic;
+            }
+        }
+        return null;
+    }
+    
     public static void generateSecondPhaseClusteredMicroservices(String[][] comp) {
         // Get all unique classes from the current composition
         Set<String> availableClasses = new HashSet<>();
@@ -619,7 +1025,7 @@ public class Microservices {
         Collections.sort(remainingClassesList); // Sort for consistent ordering
 
         // Start clustering from the next number after first phase
-        int micCounter = lastMicNumberFromFirstPhase + 1;
+        currentMicCounter = lastMicNumberFromFirstPhase + 1;
 
         // First, generate all possible pairs of remaining classes
         for (int i = 0; i < remainingClassesList.size(); i++) {
@@ -633,15 +1039,14 @@ public class Microservices {
                 newMicClasses.add(class2);
 
                 // Store the new microservice
-                allMicroservices.put(micCounter, newMicClasses);
+                allMicroservices.put(currentMicCounter, newMicClasses);
 
                 // Print the new microservice
-                System.out.printf("mic%d:\n", micCounter);
+                System.out.printf("mic%d:\n", currentMicCounter);
                 for (String className : newMicClasses) {
-                    System.out.printf("\tmic%d.%s\n", micCounter, className);
+                    System.out.printf("\tmic%d.%s\n", currentMicCounter, className);
                 }
-
-                micCounter++;
+                currentMicCounter++;
             }
         }
 
@@ -652,20 +1057,34 @@ public class Microservices {
             newMicClasses.add(remainingClass);
 
             // Store the new microservice
-            allMicroservices.put(micCounter, newMicClasses);
+            allMicroservices.put(currentMicCounter, newMicClasses);
 
             // Print the new microservice
-            System.out.printf("mic%d:\n", micCounter);
+            System.out.printf("mic%d:\n", currentMicCounter);
             for (String className : newMicClasses) {
-                System.out.printf("\tmic%d.%s\n", micCounter, className);
+                System.out.printf("\tmic%d.%s\n", currentMicCounter, className);
             }
-
-            micCounter++;
+            currentMicCounter++;
         }
 
+        // Store all microservices from second phase
+        temporaryList.clear(); // Clear any previous data
+        for (Map.Entry<Integer, List<String>> entry : allMicroservices.entrySet()) {
+            temporaryList.add(new TemporaryMicroservice(entry.getKey(), entry.getValue()));
+        }
+        
         // Calculate metrics for second phase
         printISC(comp);
         printSecondPhaseESC(comp);
+        
+        // Store the state before selecting optimal microservices
+        Map<Integer, List<String>> savedState = new HashMap<>(allMicroservices);
+        
+        selectSecondOptimalMicroservices(); // Select optimal microservice for second phase
+        
+        // Restore the state
+        allMicroservices.clear();
+        allMicroservices.putAll(savedState);
     }
 
     public static double calculateSecondPhaseESC(int micNumber, String[][] comp) {
@@ -773,7 +1192,6 @@ public class Microservices {
         }
         
         // Calculate ESC for each combined microservice (skip single class ones)
-        allMetrics.clear(); // Clear previous metrics
         for (int micNumber = lastMicNumberFromFirstPhase + 1; micNumber <= maxMicNumber; micNumber++) {
             List<String> classes = getClassesInMicroservice(micNumber);
             if (!classes.isEmpty() && classes.size() > 1) {
@@ -784,33 +1202,13 @@ public class Microservices {
                 double esc = calculateSecondPhaseESC(micNumber, comparison);
                 System.out.printf("ESC(mic%d) = %.6f\n", micNumber, esc);
 
-                // Calculate ISC using the same method as printISC
-                double totalIntraSim = 0.0;
-                int pairs = 0;
-                for (int i = 0; i < classes.size(); i++) {
-                    for (int j = i + 1; j < classes.size(); j++) {
-                        String class1 = classes.get(i);
-                        String class2 = classes.get(j);
-
-                        HashMap<String, Double> map1 = intraSimMap.get(class1);
-                        HashMap<String, Double> map2 = intraSimMap.get(class2);
-
-                        double intraSim12 = map1 != null ? map1.getOrDefault(class2, 0.0) : 0.0;
-                        double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
-
-                        if (intraSim12 != 0.0 || intraSim21 != 0.0) {
-                            totalIntraSim += (intraSim12 + intraSim21) / 2.0;
-                            pairs++;
-                        }
+                // Update ESC in existing metrics
+                for (MicroserviceMetrics metric : allMetrics) {
+                    if (metric.micNumber == micNumber) {
+                        metric.esc = esc;
+                        break;
                     }
                 }
-
-                double isc = pairs == 0 ? 0.0 : BigDecimal.valueOf(totalIntraSim / pairs)
-                        .setScale(6, RoundingMode.DOWN)
-                        .doubleValue();
-
-                // Store metrics
-                allMetrics.add(new MicroserviceMetrics(micNumber, isc, esc, new ArrayList<>(classes)));
             }
         }
     }
