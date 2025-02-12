@@ -50,15 +50,24 @@ public class Microservices {
         System.out.println("First Iteration Clustering");
         System.out.println("------------------------");
         String[][] currentComp = comp2;
+
+        // Initialize microservices
+        generateInitialMicroservices(currentComp);
+
+        // Generate clustered microservices for first phase
+        generateClusteredMicroservices(currentComp);
+
+        // Calculate metrics for first phase and select optimal microservice
         printSim(currentComp);
         printIntraSim(currentComp);
         printInterSim(currentComp);
         printISC(currentComp);
-        printESC(currentComp);
-        selectOptimalMicroservices();
+        printESC(currentComp);  // This will also call selectOptimalMicroservices()
 
-        // Second clustering phase with ISC calculations
-        secondClusteringPhase(currentComp);
+        // Second clustering phase
+        System.out.println("\nSecond Iteration Clustering");
+        System.out.println("-------------------------");
+        generateSecondPhaseClusteredMicroservices(currentComp);
     }
 
     protected static Map<Integer, List<String>> allMicroservices = new HashMap<>();
@@ -250,7 +259,7 @@ public class Microservices {
                 if (classes.size() < 2) {
                     System.out.printf("Single class microservice: %s\n", classes.get(0));
                     System.out.printf("ISC(mic%d) = 0.000000\n", micNumber);
-                } else {
+                } else if (classes.size() == 2) {
                     System.out.println("Class comparisons:");
                     double totalIntraSim = 0.0;
                     int pairs = 0;
@@ -281,6 +290,37 @@ public class Microservices {
                             BigDecimal.valueOf(totalIntraSim / pairs)
                                     .setScale(6, RoundingMode.DOWN)
                                     .doubleValue() : 0.0;
+
+                    System.out.printf("ISC(mic%d) = %.6f\n", micNumber, isc);
+                } else if (classes.size() == 3) {
+                    System.out.println("Class comparisons:");
+                    double totalIntraSim = 0.0;
+                    int n = classes.size();
+                    int denominator = n * (n - 1); // 3 * (3-1) = 6
+
+                    // Show all class comparisons
+                    for (int i = 0; i < classes.size(); i++) {
+                        for (int j = i + 1; j < classes.size(); j++) {
+                            String class1 = classes.get(i);
+                            String class2 = classes.get(j);
+
+                            HashMap<String, Double> map1 = intraSimMap.get(class1);
+                            HashMap<String, Double> map2 = intraSimMap.get(class2);
+
+                            double intraSim12 = map1 != null ? map1.getOrDefault(class2, 0.0) : 0.0;
+                            double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
+
+                            System.out.printf("  %s <-> %s\n", class1, class2);
+                            
+                            // Add both directions to total
+                            totalIntraSim += (intraSim12 + intraSim21);
+                        }
+                    }
+
+                    // Calculate ISC: sum of all pairs divided by n(n-1)
+                    double isc = BigDecimal.valueOf(totalIntraSim / denominator)
+                            .setScale(6, RoundingMode.DOWN)
+                            .doubleValue();
 
                     System.out.printf("ISC(mic%d) = %.6f\n", micNumber, isc);
                 }
@@ -479,6 +519,11 @@ public class Microservices {
             }
         }
 
+        // Store the highest microservice number from first phase
+        for (Integer micNumber : allMicroservices.keySet()) {
+            lastMicNumberFromFirstPhase = Math.max(lastMicNumberFromFirstPhase, micNumber);
+        }
+
         // Apply selection algorithm
         selectOptimalMicroservices();
     }
@@ -500,155 +545,8 @@ public class Microservices {
     private static List<MicroserviceMetrics> allMetrics = new ArrayList<>();
     private static Set<String> uniqueClassesFromFirstIteration = new HashSet<>();
     private static int lastMicNumberFromFirstPhase = 0;
-    
-    private static int getHighestMicNumber() {
-        int maxMicNumber = 0;
-        for (Integer micNumber : allMicroservices.keySet()) {
-            maxMicNumber = Math.max(maxMicNumber, micNumber);
-        }
-        return maxMicNumber;
-    }
-    
-    public static void printSecondISC(String[][] comparison) {
-        System.out.println("\nSecond Iteration - Internal Service Cohesion (ISC) Calculation");
-        System.out.println("--------------------------------------------------------");
-        
-        // Build the intra-similarity map
-        HashMap<String, HashMap<String, Double>> intraSimMap = new HashMap<>();
-        for (String[] pair : comparison) {
-            String class1 = pair[0];
-            String class2 = pair[1];
-            String relation = pair[2];
-            double sim = sim(class1, class2);
-            double intraSim = intraSim(relation, sim);
-            
-            intraSimMap.putIfAbsent(class1, new HashMap<>());
-            intraSimMap.get(class1).put(class2, intraSim);
-        }
-        
-        // Calculate ISC for each new microservice
-        for (Map.Entry<Integer, List<String>> entry : allMicroservices.entrySet()) {
-            int micNumber = entry.getKey();
-            List<String> classes = entry.getValue();
-            
-            System.out.printf("\nmic%d:\n", micNumber);
-            for (String className : classes) {
-                System.out.printf("\tmic%d.%s\n", micNumber, className);
-            }
-            
-            if (classes.size() == 2) {
-                // For 2-class microservices, use regular ISC calculation
-                String class1 = classes.get(0);
-                String class2 = classes.get(1);
-                
-                HashMap<String, Double> map1 = intraSimMap.get(class1);
-                HashMap<String, Double> map2 = intraSimMap.get(class2);
-                
-                double intraSim12 = map1 != null ? map1.getOrDefault(class2, 0.0) : 0.0;
-                double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
-                
-                double isc = (intraSim12 + intraSim21) / 2.0;
-                System.out.printf("ISC = %.6f\n", isc);
-                
-            } else if (classes.size() == 3) {
-                // For 3-class microservices, use the special formula
-                String class1 = classes.get(0);
-                String class2 = classes.get(1);
-                String class3 = classes.get(2);
-                
-                // Get all intra-similarity values
-                HashMap<String, Double> map1 = intraSimMap.get(class1);
-                HashMap<String, Double> map2 = intraSimMap.get(class2);
-                HashMap<String, Double> map3 = intraSimMap.get(class3);
-                
-                // Calculate pairs
-                double intraSim12 = map1 != null ? map1.getOrDefault(class2, 0.0) : 0.0;
-                double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
-                
-                double intraSim13 = map1 != null ? map1.getOrDefault(class3, 0.0) : 0.0;
-                double intraSim31 = map3 != null ? map3.getOrDefault(class1, 0.0) : 0.0;
-                
-                double intraSim23 = map2 != null ? map2.getOrDefault(class3, 0.0) : 0.0;
-                double intraSim32 = map3 != null ? map3.getOrDefault(class2, 0.0) : 0.0;
-                
-                // Apply the formula: sum of (intraSim(i,j) + intraSim(j,i)) / (n * (n-1))
-                double totalSum = (intraSim12 + intraSim21) + (intraSim13 + intraSim31) + (intraSim23 + intraSim32);
-                double isc = totalSum / (3.0 * 2.0); // n=3, n*(n-1)=6
-                
-                System.out.printf("ISC = %.6f\n", isc);
-            }
-        }
-    }
-    
-    public static void secondClusteringPhase(String[][] comparison) {
-        System.out.println("\nClustering Phase");
-        System.out.println("----------------");
-
-        // Clear previous microservices
-        allMicroservices.clear();
-
-        // Start from the next number after first phase
-        int nextMicNumber = lastMicNumberFromFirstPhase + 1;
-        System.out.printf("Starting from mic%d (after first phase ended at mic%d)\n\n",
-                nextMicNumber, lastMicNumberFromFirstPhase);
-
-        // Get the unique classes from threshold-meeting microservices
-        Set<String> uniqueClasses = new HashSet<>();
-        for (MicroserviceMetrics metrics : allMetrics) {
-            if (metrics.isc > iscThreshold && metrics.esc > escThreshold) {
-                uniqueClasses.addAll(metrics.classes);
-            }
-        }
-        List<String> classes = new ArrayList<>(uniqueClasses);
-        Collections.sort(classes); // Sort to ensure consistent ordering
-
-        // Create all possible pairs
-        for (int i = 0; i < classes.size(); i++) {
-            for (int j = i + 1; j < classes.size(); j++) {
-                String class1 = classes.get(i);
-                String class2 = classes.get(j);
-
-                // Store the microservice
-                List<String> newMicClasses = Arrays.asList(class1, class2);
-                allMicroservices.put(nextMicNumber, newMicClasses);
-
-                // Print the microservice
-                System.out.printf("mic%d:\n", nextMicNumber);
-                System.out.printf("\tmic%d.%s\n", nextMicNumber, class1);
-                System.out.printf("\tmic%d.%s\n", nextMicNumber, class2);
-                System.out.println();
-
-                nextMicNumber++;
-            }
-        }
-
-        // Create all possible combinations of 3 classes
-        for (int i = 0; i < classes.size(); i++) {
-            for (int j = i + 1; j < classes.size(); j++) {
-                for (int k = j + 1; k < classes.size(); k++) {
-                    String class1 = classes.get(i);
-                    String class2 = classes.get(j);
-                    String class3 = classes.get(k);
-
-                    // Store the microservice
-                    List<String> newMicClasses = Arrays.asList(class1, class2, class3);
-                    allMicroservices.put(nextMicNumber, newMicClasses);
-
-                    // Print the microservice
-                    System.out.printf("mic%d:\n", nextMicNumber);
-                    System.out.printf("\tmic%d.%s\n", nextMicNumber, class1);
-                    System.out.printf("\tmic%d.%s\n", nextMicNumber, class2);
-                    System.out.printf("\tmic%d.%s\n", nextMicNumber, class3);
-                    System.out.println();
-
-                    nextMicNumber++;
-                }
-            }
-        }
-
-        // Calculate ISC for all new microservices
-        printSecondISC(comparison);
-    }
+    private static MicroserviceMetrics optimalMicroservice = null;
+    private static Set<String> excludedClasses = new HashSet<>();
 
 
     private static void selectOptimalMicroservices() {
@@ -670,19 +568,9 @@ public class Microservices {
                 }
             }
         }
-        
-        System.out.println("\nUnique classes from threshold-meeting microservices:");
-        System.out.println("------------------------------------------------");
-        for (String className : uniqueClasses) {
-            System.out.println(className);
-        }
-        
-        // Store unique classes for use in second iteration
-        uniqueClassesFromFirstIteration.clear();
-        uniqueClassesFromFirstIteration.addAll(uniqueClasses);
 
         // Find microservice that sub-optimizes both objectives
-        MicroserviceMetrics bestMic = null;
+        optimalMicroservice = null;
         int maxOptimizationCount = -1;
 
         for (int i = 0; i < ltmp.size(); i++) {
@@ -700,17 +588,237 @@ public class Microservices {
 
             if (optimizationCount > maxOptimizationCount) {
                 maxOptimizationCount = optimizationCount;
-                bestMic = current;
+                optimalMicroservice = current;
             }
         }
 
-        if (bestMic != null) {
-            System.out.printf("\nSelected optimal microservice: mic%d\n", bestMic.micNumber);
+        if (optimalMicroservice != null) {
+            System.out.printf("\nSelected optimal microservice: mic%d\n", optimalMicroservice.micNumber);
             System.out.println("------------------------------------");
-            System.out.printf("ISC = %.6f, ESC = %.6f\n", bestMic.isc, bestMic.esc);
+            System.out.printf("ISC = %.6f, ESC = %.6f\n", optimalMicroservice.isc, optimalMicroservice.esc);
             System.out.println("Classes:");
-            for (String className : bestMic.classes) {
-                System.out.printf("mic%d.model.%s\n", bestMic.micNumber, className);
+            for (String className : optimalMicroservice.classes) {
+                System.out.printf("mic%d.model.%s\n", optimalMicroservice.micNumber, className);
+                excludedClasses.add(className); // Store classes to exclude in second phase
+            }
+            // Store the last microservice number
+            lastMicNumberFromFirstPhase = allMicroservices.size();
+            // Clear previous metrics for second phase
+            allMetrics.clear();
+            allMicroservices.clear();
+        }
+    }
+
+    public static void generateSecondPhaseClusteredMicroservices(String[][] comp) {
+        // Get all unique classes from the current composition
+        Set<String> availableClasses = new HashSet<>();
+        for (String[] relation : comp) {
+            availableClasses.add(relation[0]);
+            availableClasses.add(relation[1]);
+        }
+
+        // Get classes from optimal microservice
+        List<String> optimalClasses = new ArrayList<>(excludedClasses);
+
+        // Get remaining classes (excluding optimal classes)
+        Set<String> remainingClasses = new HashSet<>(availableClasses);
+        remainingClasses.removeAll(excludedClasses);
+        List<String> remainingClassesList = new ArrayList<>(remainingClasses);
+        Collections.sort(remainingClassesList); // Sort for consistent ordering
+
+        // Start clustering from the next number after first phase
+        int micCounter = lastMicNumberFromFirstPhase + 1;
+
+        // First, generate all possible pairs of remaining classes
+        for (int i = 0; i < remainingClassesList.size(); i++) {
+            for (int j = i + 1; j < remainingClassesList.size(); j++) {
+                String class1 = remainingClassesList.get(i);
+                String class2 = remainingClassesList.get(j);
+
+                // Create new microservice containing both classes
+                List<String> newMicClasses = new ArrayList<>();
+                newMicClasses.add(class1);
+                newMicClasses.add(class2);
+
+                // Store the new microservice
+                allMicroservices.put(micCounter, newMicClasses);
+
+                // Print the new microservice
+                System.out.printf("mic%d:\n", micCounter);
+                for (String className : newMicClasses) {
+                    System.out.printf("\tmic%d.%s\n", micCounter, className);
+                }
+
+                micCounter++;
+            }
+        }
+
+        // Then, generate combinations of remaining classes with optimal classes
+        for (String remainingClass : remainingClassesList) {
+            // Create new microservice containing all optimal classes plus the remaining class
+            List<String> newMicClasses = new ArrayList<>(optimalClasses);
+            newMicClasses.add(remainingClass);
+
+            // Store the new microservice
+            allMicroservices.put(micCounter, newMicClasses);
+
+            // Print the new microservice
+            System.out.printf("mic%d:\n", micCounter);
+            for (String className : newMicClasses) {
+                System.out.printf("\tmic%d.%s\n", micCounter, className);
+            }
+
+            micCounter++;
+        }
+
+        // Calculate metrics for second phase
+        printISC(comp);
+        printSecondPhaseESC(comp);
+    }
+
+    public static double calculateSecondPhaseESC(int micNumber, String[][] comp) {
+        List<String> micClasses = getClassesInMicroservice(micNumber);
+        if (micClasses.isEmpty()) return 0.0;
+
+        System.out.printf("\nCalculating ESC for mic%d:\n", micNumber);
+        System.out.printf("Considering relationships with optimal microservice mic%d and unique classes\n", 
+                optimalMicroservice.micNumber);
+
+        // Get all unique external classes that have incoming relationships with our microservice
+        Set<String> n2Classes = new HashSet<>();
+        for (String[] relation : comp) {
+            if (micClasses.contains(relation[1]) && !micClasses.contains(relation[0])) {
+                n2Classes.add(relation[0]);
+            }
+        }
+
+        // If no incoming relationships, return 0.0
+        if (n2Classes.isEmpty()) {
+            System.out.printf("No incoming relationships found, ESC = 0.0\n");
+            return 0.0;
+        }
+
+        double totalInterDistance = 0.0;
+        int M = micClasses.size();
+        int N2 = n2Classes.size();
+
+        System.out.printf("M (classes in microservice) = %d\n", M);
+        System.out.printf("N2 (external classes with incoming relationships) = %d\n", N2);
+
+        // For each class in our microservice
+        for (String micClass : micClasses) {
+            System.out.printf("  %s has relationships with:\n", micClass);
+            double sumInterDistances = 0.0;
+
+            // Find all relationships for this class
+            for (String[] relation : comp) {
+                // Only consider relationships where this class is the target (incoming)
+                if (relation[1].equals(micClass)) {
+                    String otherClass = relation[0];
+                    String relType = relation[2];
+
+                    // Skip if otherClass is in our microservice
+                    if (micClasses.contains(otherClass)) continue;
+
+                    double weight = 1.0;
+                    // If otherClass is in optimal microservice, divide by 2
+                    if (optimalMicroservice.classes.contains(otherClass)) {
+                        weight = 2.0;
+                    }
+
+                    double sim = Microservices.sim(micClass, otherClass);
+                    double interDistance = Microservices.interDistance(relType, sim);
+                    double weightedInterDistance = interDistance / weight;
+
+                    System.out.printf("    - %s (%s, incoming): sim=%.6f, interDistance=%.6f, weighted=%.6f\n",
+                            otherClass, relType, sim, interDistance, weightedInterDistance);
+
+                    sumInterDistances += weightedInterDistance;
+                }
+            }
+
+            // Average inter-distance for this class (divide by N2)
+            double avgInterDistance = sumInterDistances / N2;
+            totalInterDistance += avgInterDistance;
+            System.out.printf("    Average inter-distance = %.6f\n", avgInterDistance);
+        }
+
+        // Calculate final ESC (divide by M)
+        double avgInterDistance = totalInterDistance / M;
+        double esc = BigDecimal.valueOf(1.0 - avgInterDistance)
+                .setScale(6, RoundingMode.DOWN)
+                .doubleValue();
+
+        System.out.printf("Final ESC calculation:\n");
+        System.out.printf("  Total inter-distance = %.6f\n", totalInterDistance);
+        System.out.printf("  Average inter-distance = %.6f\n", avgInterDistance);
+        System.out.printf("  ESC = 1 - %.6f = %.6f\n", avgInterDistance, esc);
+
+        return esc;
+    }
+
+    public static void printSecondPhaseESC(String[][] comparison) {
+        System.out.println("\nExternal Service Cohesion (ESC) Calculation - Second Phase");
+        System.out.println("----------------------------------------------------");
+
+        // Find max microservice number
+        int maxMicNumber = 0;
+        for (Integer micNumber : allMicroservices.keySet()) {
+            maxMicNumber = Math.max(maxMicNumber, micNumber);
+        }
+
+        // Build the intra-similarity map for ISC calculation
+        HashMap<String, HashMap<String, Double>> intraSimMap = new HashMap<>();
+        for (String[] pair : comparison) {
+            String class1 = pair[0];
+            String class2 = pair[1];
+            String relation = pair[2];
+            double sim = sim(class1, class2);
+            double intraSim = intraSim(relation, sim);
+
+            intraSimMap.putIfAbsent(class1, new HashMap<>());
+            intraSimMap.get(class1).put(class2, intraSim);
+        }
+        
+        // Calculate ESC for each combined microservice (skip single class ones)
+        allMetrics.clear(); // Clear previous metrics
+        for (int micNumber = lastMicNumberFromFirstPhase + 1; micNumber <= maxMicNumber; micNumber++) {
+            List<String> classes = getClassesInMicroservice(micNumber);
+            if (!classes.isEmpty() && classes.size() > 1) {
+                // Print microservice details
+                System.out.printf("\nmic%d (Combined): %s\n", micNumber, String.join(" + ", classes));
+
+                // Calculate ESC
+                double esc = calculateSecondPhaseESC(micNumber, comparison);
+                System.out.printf("ESC(mic%d) = %.6f\n", micNumber, esc);
+
+                // Calculate ISC using the same method as printISC
+                double totalIntraSim = 0.0;
+                int pairs = 0;
+                for (int i = 0; i < classes.size(); i++) {
+                    for (int j = i + 1; j < classes.size(); j++) {
+                        String class1 = classes.get(i);
+                        String class2 = classes.get(j);
+
+                        HashMap<String, Double> map1 = intraSimMap.get(class1);
+                        HashMap<String, Double> map2 = intraSimMap.get(class2);
+
+                        double intraSim12 = map1 != null ? map1.getOrDefault(class2, 0.0) : 0.0;
+                        double intraSim21 = map2 != null ? map2.getOrDefault(class1, 0.0) : 0.0;
+
+                        if (intraSim12 != 0.0 || intraSim21 != 0.0) {
+                            totalIntraSim += (intraSim12 + intraSim21) / 2.0;
+                            pairs++;
+                        }
+                    }
+                }
+
+                double isc = pairs == 0 ? 0.0 : BigDecimal.valueOf(totalIntraSim / pairs)
+                        .setScale(6, RoundingMode.DOWN)
+                        .doubleValue();
+
+                // Store metrics
+                allMetrics.add(new MicroserviceMetrics(micNumber, isc, esc, new ArrayList<>(classes)));
             }
         }
     }
