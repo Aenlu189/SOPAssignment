@@ -19,8 +19,8 @@ public class Microservices {
         interWeight.put("ass", 0.8);
         interWeight.put("dep", 1.0);
     }
-    private static double iscThreshold = 0.079;
-    private static double escThreshold = 0.70;
+    private static double iscThreshold = 0.016;
+    private static double escThreshold = 0.80;
 
     public static void main(String[] args) {
         String[][] comp = {
@@ -36,6 +36,19 @@ public class Microservices {
                 {"Project", "ProjectNumber", "ass"}
         };
 
+        String[][] comp3 = {
+                {"Controller", "Role", "ass"},
+                {"Controller", "Architects", "dep"},
+                {"Controller", "Engineers", "dep"},
+                {"Architect", "Architects", "com"},
+                {"Engineer", "Engineers", "com"},
+                {"Project", "Architect", "com"},
+                {"Project", "Engineer", "com"},
+                {"ProjectNumber", "Engineer", "com"},
+                {"ProjectNumber", "Project", "com"},
+                {"ProjectNumber", "Architect", "com"}
+        };
+
         String[][] comp2 = {
                 {"Student", "DbStorage", "com"},
                 {"Student", "FileStorage", "com"},
@@ -49,7 +62,7 @@ public class Microservices {
         // First iteration
         System.out.println("First Iteration Clustering");
         System.out.println("------------------------");
-        String[][] currentComp = comp2;
+        String[][] currentComp = comp3;
 
         // Initialize microservices
         generateInitialMicroservices(currentComp);
@@ -333,112 +346,68 @@ public class Microservices {
         List<String> micClasses = getClassesInMicroservice(micNumber);
         if (micClasses.isEmpty()) return 0.0;
 
-        // Find which initial microservices were used to create this microservice
-        Set<Integer> usedMics = new HashSet<>();
-        for (int i = 1; i <= 6; i++) {  // Check all initial microservices
-            List<String> initialMicClasses = getClassesInMicroservice(i);
-            if (!Collections.disjoint(micClasses, initialMicClasses)) {
-                usedMics.add(i);
-            }
-        }
-
-        // Group external classes by their relationships with our microservice
-        Map<String, Map<String, String>> externalRelations = new HashMap<>();
-
-        // For each relationship in comp
-        for (String[] relation : comp) {
-            String class1 = relation[0];
-            String class2 = relation[1];
-            String relType = relation[2];
-
-            // Check if class1 is in our microservice and class2 is not
-            if (micClasses.contains(class1) && !micClasses.contains(class2)) {
-                // Find which initial microservice contains class2
-                for (int i = 1; i <= 6; i++) {
-                    if (!usedMics.contains(i) && getClassesInMicroservice(i).contains(class2)) {
-                        // Only add the relationship if class2 is the source
-                        boolean hasOppositeRelation = false;
-                        for (String[] r : comp) {
-                            if (r[0].equals(class2) && r[1].equals(class1)) {
-                                hasOppositeRelation = true;
-                                break;
-                            }
-                        }
-                        if (hasOppositeRelation) {
-                            externalRelations.computeIfAbsent(class2, k -> new HashMap<>())
-                                    .put(class1, relType);
-                        }
-                        break;
-                    }
-                }
-            }
-            // Check if class2 is in our microservice and class1 is not
-            else if (micClasses.contains(class2) && !micClasses.contains(class1)) {
-                // Find which initial microservice contains class1
-                for (int i = 1; i <= 6; i++) {
-                    if (!usedMics.contains(i) && getClassesInMicroservice(i).contains(class1)) {
-                        // Only add the relationship if class1 is the source
-                        boolean hasOppositeRelation = false;
-                        for (String[] r : comp) {
-                            if (r[0].equals(class1) && r[1].equals(class2)) {
-                                hasOppositeRelation = true;
-                                break;
-                            }
-                        }
-                        if (hasOppositeRelation) {
-                            externalRelations.computeIfAbsent(class1, k -> new HashMap<>())
-                                    .put(class2, relType);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        if (externalRelations.isEmpty()) return 0.0; // No external relations
-
         System.out.printf("\nCalculating ESC for mic%d:\n", micNumber);
-        System.out.printf("Excluding microservices used in formation: %s\n", usedMics);
-        System.out.println("External relationships found:");
+
+        // Get all unique external classes that have incoming relationships with our microservice
+        Set<String> n2Classes = new HashSet<>();
+        for (String[] relation : comp) {
+            if (micClasses.contains(relation[1]) && !micClasses.contains(relation[0])) {
+                n2Classes.add(relation[0]);
+            }
+        }
+
+        // If no incoming relationships, return 0.0
+        if (n2Classes.isEmpty()) {
+            System.out.printf("No incoming relationships found, ESC = 0.0\n");
+            return 0.0;
+        }
 
         double totalInterDistance = 0.0;
+        int M = micClasses.size();
+        int N2 = n2Classes.size();
 
-        // Calculate inter-distance for each external class
-        for (Map.Entry<String, Map<String, String>> entry : externalRelations.entrySet()) {
-            String externalClass = entry.getKey();
-            Map<String, String> relations = entry.getValue();
+        System.out.printf("M (classes in microservice) = %d\n", M);
+        System.out.printf("N2 (external classes with incoming relationships) = %d\n", N2);
 
-            System.out.printf("  %s has relationships with:\n", externalClass);
-
-            // Calculate average relationship for this external class
+        // For each class in our microservice
+        for (String micClass : micClasses) {
+            System.out.printf("  %s has relationships with:\n", micClass);
             double sumInterDistances = 0.0;
-            for (Map.Entry<String, String> rel : relations.entrySet()) {
-                String micClass = rel.getKey();
-                String relType = rel.getValue();
 
-                double sim = Microservices.sim(micClass, externalClass);
-                double interDistance = Microservices.interDistance(relType, sim);
-                sumInterDistances += interDistance;
+            // Find all relationships for this class
+            for (String[] relation : comp) {
+                // Only consider relationships where this class is the target (incoming)
+                if (relation[1].equals(micClass)) {
+                    String otherClass = relation[0];
+                    String relType = relation[2];
 
-                System.out.printf("    - %s (%s): sim=%.6f, interDistance=%.6f\n",
-                        micClass, relType, sim, interDistance);
+                    // Skip if otherClass is in our microservice
+                    if (micClasses.contains(otherClass)) continue;
+
+                    double sim = Microservices.sim(micClass, otherClass);
+                    double interDistance = Microservices.interDistance(relType, sim);
+
+                    System.out.printf("    - %s (%s, incoming): sim=%.6f, interDistance=%.6f\n",
+                            otherClass, relType, sim, interDistance);
+
+                    sumInterDistances += interDistance;
+                }
             }
 
-            double avgInterDistance = sumInterDistances / 2;
+            // Average inter-distance for this class (divide by N2)
+            double avgInterDistance = sumInterDistances / N2;
             totalInterDistance += avgInterDistance;
-
             System.out.printf("    Average inter-distance = %.6f\n", avgInterDistance);
         }
 
-        // Calculate final ESC
-        double avgInterDistance = totalInterDistance / externalRelations.size();
+        // Calculate final ESC (divide by M)
+        double avgInterDistance = totalInterDistance / M;
         double esc = BigDecimal.valueOf(1.0 - avgInterDistance)
                 .setScale(6, RoundingMode.DOWN)
                 .doubleValue();
 
         System.out.printf("Final ESC calculation:\n");
         System.out.printf("  Total inter-distance = %.6f\n", totalInterDistance);
-        System.out.printf("  Number of related classes = %d\n", externalRelations.size());
         System.out.printf("  Average inter-distance = %.6f\n", avgInterDistance);
         System.out.printf("  ESC = 1 - %.6f = %.6f\n", avgInterDistance, esc);
 
@@ -461,7 +430,7 @@ public class Microservices {
             maxMicNumber = Math.max(maxMicNumber, micNumber);
         }
 
-        // Build the intra-similarity map for ISC calculation
+        // Create and build the intra-similarity map for ISC calculation
         HashMap<String, HashMap<String, Double>> intraSimMap = new HashMap<>();
         for (String[] pair : comparison) {
             String class1 = pair[0];
@@ -472,6 +441,29 @@ public class Microservices {
 
             intraSimMap.putIfAbsent(class1, new HashMap<>());
             intraSimMap.get(class1).put(class2, intraSim);
+        }
+
+        // Process each microservice
+        for (int micNumber = 1; micNumber <= maxMicNumber; micNumber++) {
+            List<String> micClasses = getClassesInMicroservice(micNumber);
+            if (!micClasses.isEmpty()) {
+                // Get N2 classes (external classes with incoming relationships)
+                Set<String> n2Classes = new HashSet<>();
+                for (String[] relation : comparison) {
+                    if (micClasses.contains(relation[1]) && !micClasses.contains(relation[0])) {
+                        n2Classes.add(relation[0]);
+                    }
+                }
+
+                double esc = calculateESC(micNumber, comparison);
+                if (!n2Classes.isEmpty()) {
+                    System.out.printf("ESC(mic%d) = %.6f (M=%d, N2=%d)\n", 
+                        micNumber, esc, micClasses.size(), n2Classes.size());
+                } else {
+                    System.out.printf("ESC(mic%d) = %.6f (no incoming relationships)\n", 
+                        micNumber, esc);
+                }
+            }
         }
 
         // Store the highest microservice number from first phase
