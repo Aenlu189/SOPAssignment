@@ -22,7 +22,7 @@ public class MicDecomp {
         interWeight.put("ass", 0.8);
         interWeight.put("dep", 1.0);
     }
-    private static double iscThreshold = 0.079;
+    private static double iscThreshold = 0.12;
     private static double escThreshold = 0.7;
 
     private static class MicroservicePair {
@@ -170,7 +170,7 @@ public class MicDecomp {
         };
 
 
-        relationships = data;
+        relationships = data2;
         /**
         addMicroservice("mic1", "StorageType");
         addMicroservice("mic2", "FileStorage");
@@ -179,12 +179,13 @@ public class MicDecomp {
         addMicroservice("mic5", "DbStorage");
         addMicroservice("mic6", "DataParser");
         **/
-
+        /**
         addMicroservice("mic1", "StorageType");
         addMicroservice("mic2", "FileStorage");
         addMicroservice("mic3", "Student");
         addMicroservice("mic4", "Controller");
         addMicroservice("mic5", "DbStorage", "DataParser");
+         **/
 
         /**
         addMicroservice("mic1", "StorageType");
@@ -193,10 +194,15 @@ public class MicDecomp {
         addMicroservice("mic4", "DbStorage", "DataParser");
          **/
 
-        //addMicroservice("mic1", "Controller");
-        //addMicroservice("mic2", "Role");
-        //addMicroservice("mic3", "Project", "Architect", "Architects");
-        //addMicroservice("mic5", "Engineer","ProjectNumber", "Engineers");
+
+        addMicroservice("mic1", "Controller");
+        addMicroservice("mic2", "Role");
+        addMicroservice("mic3", "Project");
+        addMicroservice("mic4", "Architect");
+        addMicroservice("mic5", "Architects");
+        addMicroservice("mic5", "Engineer");
+        addMicroservice("mic7", "ProjectNumber");
+        addMicroservice("mic8", "Engineers");
 
 
 
