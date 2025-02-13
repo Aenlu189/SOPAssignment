@@ -2,13 +2,7 @@ package mainCalculation;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.Arrays;
-import java.util.ArrayList;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class MicDecomp {
@@ -28,14 +22,130 @@ public class MicDecomp {
         interWeight.put("ass", 0.8);
         interWeight.put("dep", 1.0);
     }
-    private static double iscThreshold = 0.79;
+    private static double iscThreshold = 0.079;
     private static double escThreshold = 0.7;
 
+    private static class MicroservicePair {
+        Set<String> classes;
+        double isc;
+        double esc;
+
+        MicroservicePair(Set<String> classes, double isc, double esc) {
+            this.classes = classes;
+            this.isc = isc;
+            this.esc = esc;
+        }
+
+        double getCombinedScore() {
+            return isc + esc;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+            for (String cls : classes) {
+                sb.append("[").append(cls).append("] ");
+            }
+            return String.format("%sISC = %.6f ESC = %.6f Combined = %.6f", 
+                sb.toString(), isc, esc, getCombinedScore());
+        }
+    }
+
+    public static void selectOptimalMicroservice() {
+        List<MicroservicePair> pairs = new ArrayList<>();
+        List<Map.Entry<String, Set<String>>> microservices = new ArrayList<>(Llist.entrySet());
+
+        // Calculate metrics for each pair of microservices
+        for (int i = 0; i < microservices.size(); i++) {
+            for (int j = i + 1; j < microservices.size(); j++) {
+                Set<String> combinedClasses = new HashSet<>();
+                combinedClasses.addAll(microservices.get(i).getValue());
+                combinedClasses.addAll(microservices.get(j).getValue());
+                List<String> classes = new ArrayList<>(combinedClasses);
+
+                // Calculate ISC
+                double sumIntraSim = 0.0;
+                for (int m = 0; m < classes.size(); m++) {
+                    for (int n = 0; n < classes.size(); n++) {
+                        if (m != n) {
+                            String class1 = classes.get(m);
+                            String class2 = classes.get(n);
+                            for (String[] rel : relationships) {
+                                if (rel[0].equals(class1) && rel[1].equals(class2)) {
+                                    double similarity = sim(class1, class2);
+                                    double intraSim = intraSim(rel[2], similarity);
+                                    sumIntraSim += intraSim;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                int numClasses = classes.size();
+                double isc = 0.0;
+                if (numClasses > 1) {
+                    isc = sumIntraSim / (numClasses * (numClasses - 1));
+                }
+
+                // Calculate ESC using the corrected method
+                // Get all other classes as potential optimal classes
+                Set<String> otherClasses = new HashSet<>();
+                for (Map.Entry<String, Set<String>> entry : Llist.entrySet()) {
+                    if (!entry.getKey().equals(microservices.get(i).getKey()) && 
+                        !entry.getKey().equals(microservices.get(j).getKey())) {
+                        otherClasses.addAll(entry.getValue());
+                    }
+                }
+                
+                double esc = calculateESC(combinedClasses, otherClasses);
+
+                // Create pair and add to list
+                pairs.add(new MicroservicePair(combinedClasses, isc, esc));
+
+                // Print details for this combination
+                System.out.printf("\nAnalyzing combination of %s and %s:\n", 
+                    microservices.get(i).getKey(), microservices.get(j).getKey());
+                System.out.printf("Classes: %s\n", String.join(", ", combinedClasses));
+                System.out.printf("ISC = %.6f\n", isc);
+                System.out.printf("ESC = %.6f\n", esc);
+            }
+        }
+
+        // Filter pairs that meet both thresholds
+        List<MicroservicePair> validPairs = pairs.stream()
+                .filter(p -> p.isc >= iscThreshold && p.esc >= escThreshold)
+                .sorted((p1, p2) -> {
+                    // First compare by ISC
+                    int iscCompare = Double.compare(p2.isc, p1.isc);
+                    if (iscCompare != 0) {
+                        return iscCompare;
+                    }
+                    // If ISC is equal, compare by ESC
+                    return Double.compare(p2.esc, p1.esc);
+                })
+                .collect(Collectors.toList());
+
+        System.out.println("\n=== Optimal Microservice Analysis ===");
+        System.out.printf("ISC Threshold: %.6f%n", iscThreshold);
+        System.out.printf("ESC Threshold: %.6f%n", escThreshold);
+        System.out.println("\nValid Combinations (sorted by ISC, then ESC):");
+
+        if (validPairs.isEmpty()) {
+            System.out.println("No combinations found that meet both thresholds");
+        } else {
+            for (MicroservicePair pair : validPairs) {
+                System.out.println(pair);
+            }
+            System.out.println("\nOptimal combination:");
+            System.out.println(validPairs.get(0));
+        }
+    }
+
     public static void main(String[] args) {
-        // Clear the Llist before starting
         Llist.clear();
 
         // Define relationships
+
         String[][] data = {
             {"Student", "DbStorage", "com"},
             {"Student", "FileStorage", "com"},
@@ -45,27 +155,61 @@ public class MicDecomp {
             {"Controller", "FileStorage", "dep"},
             {"Controller", "StorageType", "ass"}
         };
-        relationships = data;
 
-        // Define microservices
+        String[][] data2 = {
+                {"Controller", "Role", "ass"},
+                {"Controller", "Architects", "dep"},
+                {"Controller", "Engineers", "dep"},
+                {"Architect", "Architects", "com"},
+                {"Engineer", "Engineers", "com"},
+                {"Project", "Architect", "com"},
+                {"Project", "Engineer", "com"},
+                {"ProjectNumber", "Engineer", "com"},
+                {"ProjectNumber", "Project", "com"},
+                {"ProjectNumber", "Architect", "com"}
+        };
+
+
+        relationships = data;
+        /**
         addMicroservice("mic1", "StorageType");
-        addMicroservice("mic2", "Student");
-        addMicroservice("mic3", "FileStorage");
+        addMicroservice("mic2", "FileStorage");
+        addMicroservice("mic3", "Student");
         addMicroservice("mic4", "Controller");
         addMicroservice("mic5", "DbStorage");
         addMicroservice("mic6", "DataParser");
+        **/
 
-        // Calculate and print ISC for all possible pairs
+        addMicroservice("mic1", "StorageType");
+        addMicroservice("mic2", "FileStorage");
+        addMicroservice("mic3", "Student");
+        addMicroservice("mic4", "Controller");
+        addMicroservice("mic5", "DbStorage", "DataParser");
+
+        /**
+        addMicroservice("mic1", "StorageType");
+        addMicroservice("mic2", "FileStorage","Student");
+        addMicroservice("mic3", "Controller");
+        addMicroservice("mic4", "DbStorage", "DataParser");
+         **/
+
+        //addMicroservice("mic1", "Controller");
+        //addMicroservice("mic2", "Role");
+        //addMicroservice("mic3", "Project", "Architect", "Architects");
+        //addMicroservice("mic5", "Engineer","ProjectNumber", "Engineers");
+
+
+
+
         System.out.println("\n=== Internal Structural Cohesion (ISC) Analysis ===");
         calculateAllPairISC();
 
-        // Calculate and print ESC for all possible pairs
         System.out.println("\n=== External Structural Cohesion (ESC) Analysis ===");
         calculateAllESC();
 
-        // Set thresholds
-        iscThreshold = 0.079;
-        escThreshold = 0.7;
+        System.out.println("\n=== Analyzing combination Using (ESC and (ISC) ===");
+        System.out.println();
+        selectOptimalMicroservice();
     }
 
     public static void addMicroservice(String micName, String... classes) {
@@ -190,103 +334,139 @@ public class MicDecomp {
         double result = interWeight.get(rel) * (1 - sim);
         return BigDecimal.valueOf(result).setScale(6, RoundingMode.DOWN).doubleValue();
     }
-    
-    private static List<String> getIncomingClasses(Set<String> targetClasses) {
-        List<String> incomingClasses = new ArrayList<>();
+
+    private static double calculateESC(Set<String> targetClasses, Set<String> optimalClasses) {
+        // First, identify all microservices that have relationships with our target classes
+        Map<String, Set<String>> clientMicroservices = new HashMap<>(); // micName -> classes
+        
+        // Find all client classes and their microservices
         for (String[] rel : relationships) {
             if (targetClasses.contains(rel[1]) && !targetClasses.contains(rel[0])) {
-                if (!incomingClasses.contains(rel[0])) {
-                    incomingClasses.add(rel[0]);
+                // Find which microservice this client belongs to
+                for (Map.Entry<String, Set<String>> entry : Llist.entrySet()) {
+                    if (entry.getValue().contains(rel[0])) {
+                        clientMicroservices.put(entry.getKey(), entry.getValue());
+                        break;
+                    }
                 }
             }
         }
-        return incomingClasses;
-    }
-    
-    private static double calculateSumInterDistance(String incomingClass, Set<String> targetClasses) {
-        double sumInterDistance = 0.0;
-        
+
+        if (clientMicroservices.isEmpty()) {
+            System.out.printf("No incoming relationships found, ESC = 0.0\n");
+            return 0.0;
+        }
+
+        int M = targetClasses.size();
+        int N2 = clientMicroservices.size(); // Number of client microservices
+
+        System.out.printf("M (classes in microservice) = %d\n", M);
+        System.out.printf("N2 (external microservices with relationships) = %d\n", N2);
+
+        // Calculate sum for each class in our microservice
+        double totalSum = 0.0;
+
+        // For each class in our microservice (M)
         for (String targetClass : targetClasses) {
-            // Find relationship if it exists
-            String relationType = null;
-            for (String[] rel : relationships) {
-                if (rel[0].equals(incomingClass) && rel[1].equals(targetClass)) {
-                    relationType = rel[2];
-                    break;
+            System.out.printf("  %s has relationships with:\n", targetClass);
+            double sumMicroserviceAvgs = 0.0;
+
+            // For each client microservice
+            for (Map.Entry<String, Set<String>> clientMic : clientMicroservices.entrySet()) {
+                String micName = clientMic.getKey();
+                Set<String> clientClasses = clientMic.getValue();
+                double micSum = 0.0;
+                int micRelCount = 0;
+
+                System.out.printf("    Microservice %s:\n", micName);
+                // Calculate average inter-distance with all classes in this microservice
+                for (String clientClass : clientClasses) {
+                    for (String[] rel : relationships) {
+                        if (rel[0].equals(clientClass) && rel[1].equals(targetClass)) {
+                            double sim = sim(clientClass, targetClass);
+                            double interDist = interDistance(rel[2], sim);
+                            micSum += interDist;
+                            micRelCount++;
+                            System.out.printf("      - %s (%s): sim=%.6f, interDist=%.6f\n",
+                                clientClass, rel[2], sim, interDist);
+                        }
+                    }
                 }
+
+                // Calculate average for this microservice
+                double micAvg = micRelCount > 0 ? micSum / clientClasses.size() : 0.0;
+                System.out.printf("      Average for microservice %s = %.6f\n", micName, micAvg);
+                sumMicroserviceAvgs += micAvg;
             }
-            
-            if (relationType != null) {
-                double similarity = sim(incomingClass, targetClass);
-                sumInterDistance += interDistance(relationType, similarity);
-            } else {
-                sumInterDistance += 0.0; // No relationship means zero contribution
-            }
+
+            // Calculate average for this target class (divide by N2)
+            double classAvg = N2 > 0 ? sumMicroserviceAvgs / N2 : 0.0;
+            System.out.printf("    Average for %s = %.6f\n", targetClass, classAvg);
+            totalSum += classAvg;
         }
-        
-        return sumInterDistance;
+
+        // Calculate final ESC (divide by M and subtract from 1)
+        double avgInterDistance = M > 0 ? totalSum / M : 0.0;
+        double esc = 1.0 - avgInterDistance;
+
+        System.out.printf("Final ESC calculation:\n");
+        System.out.printf("  Total sum = %.6f\n", totalSum);
+        System.out.printf("  Average inter-distance = %.6f\n", avgInterDistance);
+        System.out.printf("  ESC = 1 - %.6f = %.6f\n", avgInterDistance, esc);
+
+        return BigDecimal.valueOf(esc)
+            .setScale(6, RoundingMode.DOWN)
+            .doubleValue();
     }
-    
+
     public static void calculateAllESC() {
         System.out.println("\nCalculating ESC for all microservice combinations:");
 
-        // Get all microservices
         List<Map.Entry<String, Set<String>>> microservices = new ArrayList<>(Llist.entrySet());
 
         // Calculate ESC for each pair of microservices
         for (int i = 0; i < microservices.size(); i++) {
             for (int j = i + 1; j < microservices.size(); j++) {
+                Map.Entry<String, Set<String>> mic1 = microservices.get(i);
+                Map.Entry<String, Set<String>> mic2 = microservices.get(j);
+                
                 Set<String> combinedClasses = new HashSet<>();
-                combinedClasses.addAll(microservices.get(i).getValue());
-                combinedClasses.addAll(microservices.get(j).getValue());
+                combinedClasses.addAll(mic1.getValue());
+                combinedClasses.addAll(mic2.getValue());
 
-                // Get incoming classes (excluding classes in the combined microservice)
-                List<String> incomingClasses = getIncomingClasses(combinedClasses);
+                System.out.printf("\nCalculating ESC for combined %s and %s:\n", 
+                    mic1.getKey(), mic2.getKey());
+                System.out.printf("Considering relationships with other microservices\n");
 
-                if (!incomingClasses.isEmpty()) {
-                    double totalSum = 0.0;
-
-                    // For each incoming class, calculate sum of its interDistances
-                    for (String incomingClass : incomingClasses) {
-                        double sumForClass = calculateSumInterDistance(incomingClass, combinedClasses);
-                        totalSum += sumForClass;
+                // Get N2 classes
+                Set<String> n2Classes = new HashSet<>();
+                for (String[] rel : relationships) {
+                    if (combinedClasses.contains(rel[1]) && !combinedClasses.contains(rel[0])) {
+                        n2Classes.add(rel[0]);
                     }
+                }
 
-                    // Calculate ESC according to the formula:
-                    // esc = 1 - (sum of all interDistances / number of target classes) / number of incoming classes
-                    double esc = 1.0 - (totalSum / combinedClasses.size()) / incomingClasses.size();
-                    esc = BigDecimal.valueOf(esc).setScale(6, RoundingMode.DOWN).doubleValue();
-
-                    // Print results in the requested format
-                    StringBuilder output = new StringBuilder();
-                    for (String cls : combinedClasses) {
-                        output.append("[").append(cls).append("] ");
-                    }
-                    output.append("ESC = %.6f%n");
-                    System.out.printf(output.toString(), esc);
+                if (!n2Classes.isEmpty()) {
+                    System.out.printf("M (classes in microservice) = %d\n", combinedClasses.size());
+                    System.out.printf("N2 (external classes with incoming relationships) = %d\n", n2Classes.size());
                     
-                    System.out.print("Incoming classes: ");
-                    for (String cls : incomingClasses) {
-                        System.out.printf("[%s] ", cls);
+                    // Get all other classes as potential optimal classes
+                    Set<String> otherClasses = new HashSet<>();
+                    for (Map.Entry<String, Set<String>> entry : Llist.entrySet()) {
+                        if (!entry.getKey().equals(mic1.getKey()) && !entry.getKey().equals(mic2.getKey())) {
+                            otherClasses.addAll(entry.getValue());
+                        }
                     }
-                    System.out.println();
-                    System.out.println();
+                    
+                    double esc = calculateESC(combinedClasses, otherClasses);
+                    System.out.printf("ESC(%s+%s) = %.6f\n", 
+                        mic1.getKey(), mic2.getKey(), esc);
                 } else {
-                    // For cases with no incoming relationships
-                    StringBuilder output = new StringBuilder();
-                    for (String cls : combinedClasses) {
-                        output.append("[").append(cls).append("] ");
-                    }
-                    output.append("ESC = 0.000000");
-                    System.out.println(output.toString());
-                    System.out.println("No incoming relationships found");
-                    System.out.println();
+                    System.out.println("No incoming relationships found, ESC = 0.000000");
                 }
             }
         }
     }
-
-
 
     // Print to view
     public static void printSim(String[][] comparison) {
