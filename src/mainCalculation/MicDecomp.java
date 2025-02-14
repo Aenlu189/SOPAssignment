@@ -46,8 +46,8 @@ public class MicDecomp {
             for (String cls : classes) {
                 sb.append("[").append(cls).append("] ");
             }
-            return String.format("%sISC = %.6f ESC = %.6f Combined = %.6f", 
-                sb.toString(), isc, esc, getCombinedScore());
+            return String.format("%sISC = %.6f ESC = %.6f Combined = %.6f",
+                    sb.toString(), isc, esc, getCombinedScore());
         }
     }
 
@@ -91,23 +91,16 @@ public class MicDecomp {
                 // Get all other classes as potential optimal classes
                 Set<String> otherClasses = new HashSet<>();
                 for (Map.Entry<String, Set<String>> entry : Llist.entrySet()) {
-                    if (!entry.getKey().equals(microservices.get(i).getKey()) && 
-                        !entry.getKey().equals(microservices.get(j).getKey())) {
+                    if (!entry.getKey().equals(microservices.get(i).getKey()) &&
+                            !entry.getKey().equals(microservices.get(j).getKey())) {
                         otherClasses.addAll(entry.getValue());
                     }
                 }
-                
+
                 double esc = calculateESC(combinedClasses, otherClasses);
 
                 // Create pair and add to list
                 pairs.add(new MicroservicePair(combinedClasses, isc, esc));
-
-                // Print details for this combination
-                System.out.printf("\nAnalyzing combination of %s and %s:\n", 
-                    microservices.get(i).getKey(), microservices.get(j).getKey());
-                System.out.printf("Classes: %s\n", String.join(", ", combinedClasses));
-                System.out.printf("ISC = %.6f\n", isc);
-                System.out.printf("ESC = %.6f\n", esc);
             }
         }
 
@@ -147,13 +140,13 @@ public class MicDecomp {
         // Define relationships
 
         String[][] data = {
-            {"Student", "DbStorage", "com"},
-            {"Student", "FileStorage", "com"},
-            {"DataParser", "DbStorage", "com"},
-            {"Controller", "DbStorage", "dep"},
-            {"DataParser", "FileStorage", "com"},
-            {"Controller", "FileStorage", "dep"},
-            {"Controller", "StorageType", "ass"}
+                {"Student", "DbStorage", "com"},
+                {"Student", "FileStorage", "com"},
+                {"DataParser", "DbStorage", "com"},
+                {"Controller", "DbStorage", "dep"},
+                {"DataParser", "FileStorage", "com"},
+                {"Controller", "FileStorage", "dep"},
+                {"Controller", "StorageType", "ass"}
         };
 
         String[][] data2 = {
@@ -172,40 +165,72 @@ public class MicDecomp {
 
         relationships = data2;
         /**
-        addMicroservice("mic1", "StorageType");
-        addMicroservice("mic2", "FileStorage");
-        addMicroservice("mic3", "Student");
-        addMicroservice("mic4", "Controller");
-        addMicroservice("mic5", "DbStorage");
-        addMicroservice("mic6", "DataParser");
-        **/
+         addMicroservice("mic1", "StorageType");
+         addMicroservice("mic2", "FileStorage");
+         addMicroservice("mic3", "Student");
+         addMicroservice("mic4", "Controller");
+         addMicroservice("mic5", "DbStorage");
+         addMicroservice("mic6", "DataParser");
+         **/
         /**
-        addMicroservice("mic1", "StorageType");
-        addMicroservice("mic2", "FileStorage");
-        addMicroservice("mic3", "Student");
-        addMicroservice("mic4", "Controller");
-        addMicroservice("mic5", "DbStorage", "DataParser");
+         addMicroservice("mic1", "StorageType");
+         addMicroservice("mic2", "FileStorage");
+         addMicroservice("mic3", "Student");
+         addMicroservice("mic4", "Controller");
+         addMicroservice("mic5", "DbStorage", "DataParser");
          **/
 
         /**
-        addMicroservice("mic1", "StorageType");
-        addMicroservice("mic2", "FileStorage","Student");
-        addMicroservice("mic3", "Controller");
-        addMicroservice("mic4", "DbStorage", "DataParser");
+         addMicroservice("mic1", "StorageType");
+         addMicroservice("mic2", "FileStorage","Student");
+         addMicroservice("mic3", "Controller");
+         addMicroservice("mic4", "DbStorage", "DataParser");
          **/
 
+        /**
+         addMicroservice("mic1", "Controller");
+         addMicroservice("mic2", "Role");
+         addMicroservice("mic3", "Architects");
+         addMicroservice("mic4", "Architect");
+         addMicroservice("mic5", "Engineers");
+         addMicroservice("mic6", "Engineer");
+         addMicroservice("mic7", "Project");
+         addMicroservice("mic8", "ProjectNumber");
+         **/
 
+        /**
+         addMicroservice("mic1", "Controller");
+         addMicroservice("mic2", "Role");
+         addMicroservice("mic3", "Architects","Architect");
+         addMicroservice("mic4", "Engineers");
+         addMicroservice("mic5", "Engineer");
+         addMicroservice("mic6", "Project");
+         addMicroservice("mic7", "ProjectNumber");
+         **/
+
+        /**
+         addMicroservice("mic1", "Controller");
+         addMicroservice("mic2", "Role");
+         addMicroservice("mic3", "Architects","Architect");
+         addMicroservice("mic4", "Engineers","Engineer");
+         addMicroservice("mic5", "Project");
+         addMicroservice("mic6", "ProjectNumber");
+         **/
+
+        ///**
         addMicroservice("mic1", "Controller");
         addMicroservice("mic2", "Role");
-        addMicroservice("mic3", "Project");
-        addMicroservice("mic4", "Architect");
-        addMicroservice("mic5", "Architects");
-        addMicroservice("mic5", "Engineer");
-        addMicroservice("mic7", "ProjectNumber");
-        addMicroservice("mic8", "Engineers");
+        addMicroservice("mic3", "Architects","Architect","Project");
+        addMicroservice("mic4", "Engineers","Engineer");
+        addMicroservice("mic5", "ProjectNumber");
+        //**/
 
-
-
+        /**
+         addMicroservice("mic1", "Controller");
+         addMicroservice("mic2", "Role");
+         addMicroservice("mic3", "Architects","Architect","Project");
+         addMicroservice("mic4", "Engineers","Engineer","ProjectNumber");
+         **/
 
         System.out.println("\n=== Internal Structural Cohesion (ISC) Analysis ===");
         calculateAllPairISC();
@@ -213,7 +238,7 @@ public class MicDecomp {
         System.out.println("\n=== External Structural Cohesion (ESC) Analysis ===");
         calculateAllESC();
 
-        System.out.println("\n=== Analyzing combination Using (ESC and (ISC) ===");
+        System.out.println("\n=== Finding the optimum combination using (ISC) & (ESC) ===");
         System.out.println();
         selectOptimalMicroservice();
     }
@@ -224,23 +249,6 @@ public class MicDecomp {
             classSet.add(cls);
         }
         Llist.put(micName, classSet);
-    }
-
-    private static void collectClassesFromArray(String[][] data) {
-        Set<String> uniqueClasses = new HashSet<>();
-        for (String[] relation : data) {
-            uniqueClasses.add(relation[0]);
-            uniqueClasses.add(relation[1]);
-        }
-
-        relationships = data;
-
-        int micCount = 1;
-        for (String className : uniqueClasses) {
-            Set<String> classes = new HashSet<>();
-            classes.add(className);
-            Llist.put("mic" + micCount++, classes);
-        }
     }
 
     private static String[][] relationships;
@@ -344,7 +352,7 @@ public class MicDecomp {
     private static double calculateESC(Set<String> targetClasses, Set<String> optimalClasses) {
         // First, identify all microservices that have relationships with our target classes
         Map<String, Set<String>> clientMicroservices = new HashMap<>(); // micName -> classes
-        
+
         // Find all client classes and their microservices
         for (String[] rel : relationships) {
             if (targetClasses.contains(rel[1]) && !targetClasses.contains(rel[0])) {
@@ -394,7 +402,7 @@ public class MicDecomp {
                             micSum += interDist;
                             micRelCount++;
                             System.out.printf("      - %s (%s): sim=%.6f, interDist=%.6f\n",
-                                clientClass, rel[2], sim, interDist);
+                                    clientClass, rel[2], sim, interDist);
                         }
                     }
                 }
@@ -419,10 +427,9 @@ public class MicDecomp {
         System.out.printf("  Total sum = %.6f\n", totalSum);
         System.out.printf("  Average inter-distance = %.6f\n", avgInterDistance);
         System.out.printf("  ESC = 1 - %.6f = %.6f\n", avgInterDistance, esc);
+        System.out.println();
 
-        return BigDecimal.valueOf(esc)
-            .setScale(6, RoundingMode.DOWN)
-            .doubleValue();
+        return BigDecimal.valueOf(esc).setScale(6, RoundingMode.DOWN).doubleValue();
     }
 
     public static void calculateAllESC() {
@@ -435,13 +442,13 @@ public class MicDecomp {
             for (int j = i + 1; j < microservices.size(); j++) {
                 Map.Entry<String, Set<String>> mic1 = microservices.get(i);
                 Map.Entry<String, Set<String>> mic2 = microservices.get(j);
-                
+
                 Set<String> combinedClasses = new HashSet<>();
                 combinedClasses.addAll(mic1.getValue());
                 combinedClasses.addAll(mic2.getValue());
 
-                System.out.printf("\nCalculating ESC for combined %s and %s:\n", 
-                    mic1.getKey(), mic2.getKey());
+                System.out.printf("\nCalculating ESC for combined %s and %s:\n",
+                        mic1.getKey(), mic2.getKey());
                 System.out.printf("Considering relationships with other microservices\n");
 
                 // Get N2 classes
@@ -455,7 +462,7 @@ public class MicDecomp {
                 if (!n2Classes.isEmpty()) {
                     System.out.printf("M (classes in microservice) = %d\n", combinedClasses.size());
                     System.out.printf("N2 (external classes with incoming relationships) = %d\n", n2Classes.size());
-                    
+
                     // Get all other classes as potential optimal classes
                     Set<String> otherClasses = new HashSet<>();
                     for (Map.Entry<String, Set<String>> entry : Llist.entrySet()) {
@@ -463,43 +470,14 @@ public class MicDecomp {
                             otherClasses.addAll(entry.getValue());
                         }
                     }
-                    
+
                     double esc = calculateESC(combinedClasses, otherClasses);
-                    System.out.printf("ESC(%s+%s) = %.6f\n", 
-                        mic1.getKey(), mic2.getKey(), esc);
+                    System.out.printf("ESC(%s+%s) = %.6f\n",
+                            mic1.getKey(), mic2.getKey(), esc);
                 } else {
                     System.out.println("No incoming relationships found, ESC = 0.000000");
                 }
             }
         }
     }
-
-    // Print to view
-    public static void printSim(String[][] comparison) {
-        System.out.println("\nSimilarity Calculation");
-        System.out.println("----------------------");
-        for (String[] pair : comparison) {
-            System.out.printf("[%s], [%s] = %.6f\n", pair[0], pair[1], sim(pair[0], pair[1]));
-        }
-        System.out.println();
-    }
-
-    public static void printIntraSim(String[][] comparison) {
-        System.out.println("IntraSimilarity Calculation");
-        System.out.println("---------------------------");
-        for (String[] pair : comparison) {
-            System.out.printf("[%s], [%s] = %.6f\n", pair[0], pair[1], intraSim(pair[2], sim(pair[0], pair[1])));
-        }
-        System.out.println();
-    }
-
-    public static void printInterDistance(String[][] comparison) {
-        System.out.println("InterSimilarity Calculation");
-        System.out.println("---------------------------");
-        for (String[] pair : comparison) {
-            System.out.printf("[%s], [%s] = %.6f\n", pair[0], pair[1], interDistance(pair[2], sim(pair[0], pair[1])));
-        }
-        System.out.println();
-    }
-
 }
